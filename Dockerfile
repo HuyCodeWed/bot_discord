@@ -20,4 +20,4 @@ COPY . .
 ENV PYTHONUNBUFFERED=1
 
 # Entry point
-CMD ["python", "getacc.py"]
+CMD ["python", "main.py"]
