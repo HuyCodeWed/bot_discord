@@ -3,6 +3,7 @@ from discord import app_commands, ui
 import asyncio
 import os
 from dotenv import load_dotenv
+from google_sheets import get_all_accounts, delete_account_by_stt
 
 # Tải các biến môi trường từ tệp .env
 load_dotenv()
@@ -34,47 +35,39 @@ class MyClient(discord.Client):
 
 client = MyClient(intents=intents)
 
-# --- View (Drop-down Menu và Nút đóng) ---
-class AccountSelectView(discord.ui.View):
-    def __init__(self, options, accounts_list):
-        super().__init__(timeout=None)
-        self.accounts_list = accounts_list
-        select_menu = discord.ui.Select(
+
+class AccountSelect(discord.ui.Select):
+    def __init__(self, options):
+        super().__init__(
             placeholder="Chọn tài khoản bạn muốn nhận",
             min_values=1,
             max_values=1,
             options=options
         )
-        select_menu.callback = self.select_callback
-        self.add_item(select_menu)
+
+    async def callback(self, interaction: discord.Interaction):
+        await self.view.select_callback(interaction)
+
+class AccountSelectView(discord.ui.View):
+    def __init__(self, options, accounts_list):
+        super().__init__(timeout=None)
+        self.accounts_list = accounts_list
+        self.add_item(AccountSelect(options))
 
     async def select_callback(self, interaction: discord.Interaction):
         stt = int(self.children[0].values[0])
-        found_account = None
-        remaining_accounts = []
-        
+
         try:
-            with open(ACCOUNTS_FILE, "r") as f:
-                lines = f.readlines()
-            
-            for line in lines:
-                parts = line.strip().split(" | ")
-                if int(parts[0]) == stt:
-                    found_account = parts
-                else:
-                    remaining_accounts.append(line)
-            
+            found_account = delete_account_by_stt(stt)
+
             if found_account:
-                with open(ACCOUNTS_FILE, "w") as f:
-                    f.writelines(remaining_accounts)
-                
                 ticket_category = client.get_channel(TICKET_CATEGORY_ID)
                 if not ticket_category:
                     await interaction.response.send_message("Lỗi: Không tìm thấy danh mục ticket.", ephemeral=True)
                     return
 
                 channel_name = f"order-{interaction.user.name.lower()}"
-                
+
                 overwrites = {
                     interaction.guild.default_role: discord.PermissionOverwrite(view_channel=False),
                     interaction.user: discord.PermissionOverwrite(view_channel=True),
@@ -88,30 +81,28 @@ class AccountSelectView(discord.ui.View):
                                f"**Mật khẩu:** `{found_account[2]}`\n" \
                                f"**Level:** `{found_account[3]}`\n" \
                                f"**Thời gian cày:** `{found_account[4]}`"
-                
+
                 admin_role = interaction.guild.get_role(ADMIN_ROLE_ID)
-                
-                # Tạo embed để hiển thị thông tin tài khoản
+
                 embed = discord.Embed(
                     title="Thông tin tài khoản của bạn",
                     description=f"{interaction.user.mention}, đây là thông tin tài khoản bạn đã chọn.",
                     color=discord.Color.blue()
                 )
                 embed.add_field(name="Chi tiết", value=account_info)
-                
-                # Tạo View mới chứa nút "Đóng Ticket"
+
                 ticket_view = discord.ui.View()
                 close_button = discord.ui.Button(label="Đóng Ticket", style=discord.ButtonStyle.red)
-                
+
                 async def close_callback(button_interaction: discord.Interaction):
-                    # Kiểm tra xem người tương tác có phải là admin không
                     if interaction.guild.get_role(ADMIN_ROLE_ID) in button_interaction.user.roles:
-                        await button_interaction.response.send_message(f"Ticket sẽ bị đóng trong 5 giây...", ephemeral=True)
+                        await button_interaction.response.send_message("Ticket sẽ bị đóng trong 5 giây...", ephemeral=True)
                         await asyncio.sleep(5)
                         try:
                             await new_channel.delete()
                         except discord.Forbidden:
-                            await button_interaction.followup.send("Lỗi: Bot không có quyền xóa kênh. Vui lòng kiểm tra quyền `Manage Channels`.", ephemeral=True)
+                            await button_interaction.followup.send(
+                                "Lỗi: Bot không có quyền xóa kênh. Kiểm tra quyền `Manage Channels`.", ephemeral=True)
                     else:
                         await button_interaction.response.send_message("Bạn không có quyền đóng ticket này!", ephemeral=True)
 
@@ -119,18 +110,85 @@ class AccountSelectView(discord.ui.View):
                 ticket_view.add_item(close_button)
 
                 await new_channel.send(f"{admin_role.mention} {interaction.user.mention}", embed=embed, view=ticket_view)
-                
+
                 await interaction.response.send_message(
-                    f"Tài khoản của bạn đã được gửi vào kênh {new_channel.mention}. Vui lòng kiểm tra!", 
+                    f"Tài khoản của bạn đã được gửi vào kênh {new_channel.mention}. Vui lòng kiểm tra!",
                     ephemeral=True
                 )
             else:
                 await interaction.response.send_message("Không tìm thấy tài khoản bạn yêu cầu.", ephemeral=True)
-        except FileNotFoundError:
-            await interaction.response.send_message("Lỗi: File danh sách tài khoản không tồn tại.", ephemeral=True)
+
         except Exception as e:
             await interaction.response.send_message(f"Có lỗi xảy ra: {e}", ephemeral=True)
 
+
+
+async def select_callback(self, interaction: discord.Interaction):
+    stt = int(self.children[0].values[0])
+    
+    try:
+        found_account = delete_account_by_stt(stt)
+
+        if found_account:
+            ticket_category = client.get_channel(TICKET_CATEGORY_ID)
+            if not ticket_category:
+                await interaction.response.send_message("Lỗi: Không tìm thấy danh mục ticket.", ephemeral=True)
+                return
+
+            channel_name = f"order-{interaction.user.name.lower()}"
+
+            overwrites = {
+                interaction.guild.default_role: discord.PermissionOverwrite(view_channel=False),
+                interaction.user: discord.PermissionOverwrite(view_channel=True),
+                interaction.guild.get_role(ADMIN_ROLE_ID): discord.PermissionOverwrite(view_channel=True),
+                interaction.guild.me: discord.PermissionOverwrite(view_channel=True, manage_channels=True)
+            }
+
+            new_channel = await ticket_category.create_text_channel(name=channel_name, overwrites=overwrites)
+
+            account_info = f"**Tài khoản:** `{found_account[1]}`\n" \
+                           f"**Mật khẩu:** `{found_account[2]}`\n" \
+                           f"**Level:** `{found_account[3]}`\n" \
+                           f"**Thời gian cày:** `{found_account[4]}`"
+
+            admin_role = interaction.guild.get_role(ADMIN_ROLE_ID)
+
+            embed = discord.Embed(
+                title="Thông tin tài khoản của bạn",
+                description=f"{interaction.user.mention}, đây là thông tin tài khoản bạn đã chọn.",
+                color=discord.Color.blue()
+            )
+            embed.add_field(name="Chi tiết", value=account_info)
+
+            ticket_view = discord.ui.View()
+            close_button = discord.ui.Button(label="Đóng Ticket", style=discord.ButtonStyle.red)
+
+            async def close_callback(button_interaction: discord.Interaction):
+                if interaction.guild.get_role(ADMIN_ROLE_ID) in button_interaction.user.roles:
+                    await button_interaction.response.send_message("Ticket sẽ bị đóng trong 5 giây...", ephemeral=True)
+                    await asyncio.sleep(5)
+                    try:
+                        await new_channel.delete()
+                    except discord.Forbidden:
+                        await button_interaction.followup.send(
+                            "Lỗi: Bot không có quyền xóa kênh. Kiểm tra quyền `Manage Channels`.", ephemeral=True)
+                else:
+                    await button_interaction.response.send_message("Bạn không có quyền đóng ticket này!", ephemeral=True)
+
+            close_button.callback = close_callback
+            ticket_view.add_item(close_button)
+
+            await new_channel.send(f"{admin_role.mention} {interaction.user.mention}", embed=embed, view=ticket_view)
+
+            await interaction.response.send_message(
+                f"Tài khoản của bạn đã được gửi vào kênh {new_channel.mention}. Vui lòng kiểm tra!",
+                ephemeral=True
+            )
+        else:
+            await interaction.response.send_message("Không tìm thấy tài khoản bạn yêu cầu.", ephemeral=True)
+
+    except Exception as e:
+        await interaction.response.send_message(f"Có lỗi xảy ra: {e}", ephemeral=True)
 def get_accounts_options():
     options = []
     accounts_list = []
@@ -159,8 +217,8 @@ def is_allowed_role(interaction: discord.Interaction) -> bool:
 @client.tree.command(name="getacc", description="Lấy một tài khoản từ danh sách")
 @app_commands.check(is_allowed_role)
 async def getacc_command(interaction: discord.Interaction):
-    options, accounts_list = get_accounts_options()
-    
+    loop = asyncio.get_event_loop()
+    options, accounts_list = await loop.run_in_executor(None, get_all_accounts)
     if not options:
         await interaction.response.send_message("Hiện không còn tài khoản nào.", ephemeral=True)
         return
