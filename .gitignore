@@ -1,3 +1,4 @@
 .env
 credentials.json
 secrets/credentials.json
+__pycache__
