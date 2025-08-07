@@ -1,17 +1,17 @@
 import discord
 from discord import app_commands, ui
 import asyncio
+import os
+from dotenv import load_dotenv
 
-# Thay thế bằng token bot của bạn
-TOKEN = "MTQwMjg4NzI0NTEwNjUxMTk1Mg.Gf8v8n.WjrKDDoEH9aF6BkuCYTTKAaPX45x56LYJ9_81M"
+# Tải các biến môi trường từ tệp .env
+load_dotenv()
 
-# --- THAY THẾ ID VÀO ĐÂY ---
-# ID của danh mục ticket
-TICKET_CATEGORY_ID = 1402909302280294441  # ID danh mục để tạo ticket
-# ID của vai trò được phép dùng lệnh /getacc
-ALLOWED_ROLE_ID = 1392448385952251924 # ID vai trò cho phép dùng lệnh
-# ID của vai trò admin để bot ping
-ADMIN_ROLE_ID = 1371770996771651606  # ID vai trò admin để ping
+# Lấy các giá trị từ biến môi trường
+TOKEN = os.getenv("BOT_TOKEN")
+TICKET_CATEGORY_ID = int(os.getenv("TICKET_CATEGORY_ID"))
+ALLOWED_ROLE_ID = int(os.getenv("ALLOWED_ROLE_ID"))
+ADMIN_ROLE_ID = int(os.getenv("ADMIN_ROLE_ID"))
 
 # Tên file chứa danh sách tài khoản
 ACCOUNTS_FILE = "accounts.txt"
